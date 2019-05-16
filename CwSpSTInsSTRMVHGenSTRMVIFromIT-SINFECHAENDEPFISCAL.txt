@@ -1,0 +1,260 @@
+alter Procedure CwSpSTInsSTRMVHGenSTRMVIFromIT
+@TranId  Varchar(10), @TipReg Varchar(3), @TipOpr Varchar(3), @ModFor Varchar(2), @CodFor Varchar(6), @NroFor Int, @TipMov Varchar(1), @CodEmp Varchar(10) As
+
+--Declaración de variables para grabación de STRMVI
+Declare @STRMVH_SUCURS Varchar(6), @STRMVH_CODFOR Varchar(6)
+Declare @STRMVH_MODFOR Varchar(2),  @STRMVH_NROFOR Int
+Declare @STRMVH_FCHMOV DateTime, @STRMVH_CAMBIO Numeric(20, 8)
+Declare @ITSTRMVI_TEXTOS Varchar(8000), @ITSTRMVI_COFLIS Varchar(6)
+Declare @ITSTRMVI_CAMBIO Numeric(20, 8), @ITSTRMVI_NIVEXP Varchar(2)
+Declare @ITSTRMVI_NROITM Int, @ITSTRMVI_NROITD Int
+Declare @Stocks Numeric(18, 4)
+
+Declare @ITSTRMVI_TIPPRO Varchar(6),  @ITSTRMVI_ARTCOD Varchar(30)
+Declare @ITSTRMVI_TIPPRD Varchar(6),  @ITSTRMVI_ARTORI Varchar(30)
+Declare @ITSTRMVI_DEPOSI Varchar(15), @ITSTRMVI_SECTOR Varchar(15)
+Declare @ITSTRMVI_DEPTRA Varchar(15), @ITSTRMVI_SECTRA Varchar(15)
+Declare @ITSTRMVI_NSERIE Varchar(30), @ITSTRMVI_NDESPA Varchar(30), @ITSTRMVI_ENVASE Varchar(30), @ITSTRMVI_NOTROS Varchar(30)
+Declare @ITSTRMVI_NFECHA Varchar(30), @ITSTRMVI_NATRIB Varchar(30), @ITSTRMVI_NUBICA Varchar(30), @ITSTRMVI_NESTAN Varchar(30)
+Declare @ITSTRMVI_TSERIE Varchar(30), @ITSTRMVI_TDESPA Varchar(30), @ITSTRMVI_TENVAS Varchar(30), @ITSTRMVI_TOTROS Varchar(30)
+Declare @ITSTRMVI_TFECHA Varchar(30), @ITSTRMVI_TATRIB Varchar(30), @ITSTRMVI_TUBICA Varchar(30), @ITSTRMVI_TESTAN Varchar(30)
+Declare @ITSTRMVI_TIPOPR Varchar(6),  @ITSTRMVI_CODOPR Varchar(30)
+--Parte-> JS-589
+Declare @ITSTRMVI_CODEMP Varchar(10)
+
+--Parte-> FL-716
+Declare @IsDepFis Varchar(1)
+
+--Parte-> CM-663
+Declare @ITSTRMVI_PRECIO Numeric(18, 6), @ITSTRMVI_PREEXT Numeric(18, 6)
+
+Declare @ITSTRMVI_CANTID Numeric(18, 4), @ITSTRMVI_CNTSEC Numeric(18, 4)
+
+Declare @Deposi Varchar(15), @Sector Varchar(15)
+Declare @NSerie Varchar(30), @Ndespa Varchar(30), @Envase Varchar(30), @Notros Varchar(30)
+Declare @Nfecha Varchar(30), @Natrib Varchar(30), @Nubica Varchar(30), @Nestan Varchar(30)
+
+--Declaración de variables de campos de usuarios
+
+--Declaración de variables de campos de auditoria
+DECLARE @ITSTRM_FECALT datetime, @ITSTRM_FECMOD datetime, @ITSTRM_USERID varchar(15), @ITSTRM_ULTOPR char(1), @ITSTRM_DEBAJA char(1), @ITSTRM_HORMOV varchar(10), @ITSTRM_MODULE varchar(10), @ITSTRM_OALIAS varchar(10), @ITSTRM_LOTTRA varchar(6), @ITSTRM_LOTREC varchar(6), @ITSTRM_LOTORI varchar(6), @ITSTRM_SYSVER varchar(10), @ITSTRM_CMPVER varchar(10)
+
+--Declaracion de variables de iteracion
+Declare @NroSeq Int, @CntLoop Int, @MaxLoop Int
+Declare @NewCnt Numeric(18, 4), @NewSec Numeric(18, 4)
+Declare @ErrorMessage Varchar(100)
+--#Parte->GR-278
+Declare @GrabarSecuencia Varchar(1)
+
+--Setea variables--
+Set @ErrorMessage = ''
+--#Parte->GR-278
+Set @GrabarSecuencia = (Select IsNull(Max(NormalValue),'N') From CwParameters Where Name = 'ST_NOTSAVENROSEQ' And (@CODEMP = '' Or COMPANYNAME = @CODEMP))
+if Upper(@GrabarSecuencia) = 'N' Begin
+	Set @NroSeq = 0
+End Else Begin
+	Set @NroSeq =(Select Max(STRMVI_NROSEQ) From STRMVI)
+End
+--#Parte->GR-278
+Set @CntLoop = 1
+Set @MaxLoop = 1
+If @TipMov = 'T' Begin
+    Set @MaxLoop = 2
+End
+-------------------
+
+--Carga la tabla intermedia de Stock dependiendo del tipo de operación
+If Upper(@TipReg) = 'FC' Begin
+	Exec CwSpFCInsFCRMVHGenSTRMVI @TranId, @ModFor, @CodFor, @NroFor, @TipMov, @CodEmp, @TipOpr
+End
+If Upper(@TipReg) = 'CO' Begin
+	Exec CwSpCOInsCORMVHGenSTRMVI @TranId, @ModFor, @CodFor, @NroFor, @TipMov, @CodEmp, @TipOpr
+End
+
+--If Upper(@TipReg) = 'PD' Or Upper(@TipReg) = 'ST' Or Upper(@TipReg) = 'CV' Begin
+    --La tabla intermedia de Stock (ITSTRMVI), se graba en la propia controller
+--End
+--If Upper(@TipReg) = 'RV' Begin
+    -- ?????????
+--End
+
+If Upper(@TipReg) = 'FC' or Upper(@TipReg) = 'CO' Begin
+    Exec CwSpSTValSTRMVHAtr @TranId, @TipMov, @TipOpr, @ErrorMessage OutPut
+End
+
+If (Len(@ErrorMessage) = 0) Begin
+
+    --Comienza la grabación de Stock
+    Declare TpCurItm Cursor Local For
+    Select
+    STRMVH_SUCURS, STRMVH_MODFOR, STRMVH_CODFOR, STRMVH_NROFOR, STRMVH_FCHMOV, STRMVH_CAMBIO,
+    ITSTRMVI_COFLIS, ITSTRMVI_CAMBIO, ITSTRMVI_TEXTOS, ITSTRMVI_NROITM,
+    ITSTRMVI_NROITD, ITSTRMVI_NIVEXP, ITSTRMVI_DEPOSI, ITSTRMVI_SECTOR,
+    ITSTRMVI_DEPTRA, ITSTRMVI_SECTRA, ITSTRMVI_TIPPRO, ITSTRMVI_ARTORI,
+    ITSTRMVI_NSERIE, ITSTRMVI_NDESPA, ITSTRMVI_ENVASE, ITSTRMVI_NOTROS,
+    ITSTRMVI_NFECHA, ITSTRMVI_NATRIB, ITSTRMVI_NUBICA, ITSTRMVI_NESTAN,
+    ITSTRMVI_TSERIE, ITSTRMVI_TDESPA, ITSTRMVI_TENVAS, ITSTRMVI_TOTROS,
+    ITSTRMVI_TFECHA, ITSTRMVI_TATRIB, ITSTRMVI_TUBICA, ITSTRMVI_TESTAN,
+    ITSTRMVI_PRECIO, ITSTRMVI_CANTID, ITSTRMVI_CNTSEC, ITSTRMVI_TIPPRD,
+    ITSTRMVI_ARTCOD , ITSTRMVI_PREEXT, ITSTRMVI_TIPOPR, ITSTRMVI_CODOPR, ITSTRMVI_CODEMP
+    --Campos de Usuario
+    
+    --Lista de campos de auditoria
+    , ITSTRMVI.ITSTRM_FECALT, ITSTRMVI.ITSTRM_FECMOD, ITSTRMVI.ITSTRM_USERID, ITSTRMVI.ITSTRM_ULTOPR, ITSTRMVI.ITSTRM_DEBAJA, ITSTRMVI.ITSTRM_HORMOV, ITSTRMVI.ITSTRM_MODULE, ITSTRMVI.ITSTRM_OALIAS, ITSTRMVI.ITSTRM_LOTTRA, ITSTRMVI.ITSTRM_LOTREC, ITSTRMVI.
+ITSTRM_LOTORI, ITSTRMVI.ITSTRM_SYSVER, ITSTRMVI.ITSTRM_CMPVER
+    From
+    STRMVH , ITSTRMVI
+    Where
+    ITSTRMVI_TRANID = @TranId And
+    (@CodEmp = '' Or @CodEmp = STRMVH_CODEMP) And
+    STRMVH_MODFOR = @ModFor And
+    STRMVH_CODFOR = @CodFor And
+    STRMVH_NROFOR = @NroFor
+    
+    --Comienza iteración
+    While @CntLoop <= @MaxLoop Begin
+    
+        Open TpCurItm
+        Fetch Next From TpCurItm Into
+        @STRMVH_SUCURS, @STRMVH_MODFOR, @STRMVH_CODFOR, @STRMVH_NROFOR, @STRMVH_FCHMOV, @STRMVH_CAMBIO,
+        @ITSTRMVI_COFLIS, @ITSTRMVI_CAMBIO, @ITSTRMVI_TEXTOS, @ITSTRMVI_NROITM, @ITSTRMVI_NROITD, @ITSTRMVI_NIVEXP,
+        @ITSTRMVI_DEPOSI, @ITSTRMVI_SECTOR, @ITSTRMVI_DEPTRA, @ITSTRMVI_SECTRA, @ITSTRMVI_TIPPRO, @ITSTRMVI_ARTORI,
+        @ITSTRMVI_NSERIE, @ITSTRMVI_NDESPA, @ITSTRMVI_ENVASE, @ITSTRMVI_NOTROS, @ITSTRMVI_NFECHA, @ITSTRMVI_NATRIB,
+        @ITSTRMVI_NUBICA, @ITSTRMVI_NESTAN, @ITSTRMVI_TSERIE, @ITSTRMVI_TDESPA, @ITSTRMVI_TENVAS, @ITSTRMVI_TOTROS,
+        @ITSTRMVI_TFECHA, @ITSTRMVI_TATRIB, @ITSTRMVI_TUBICA, @ITSTRMVI_TESTAN, @ITSTRMVI_PRECIO, @ITSTRMVI_CANTID,
+        @ITSTRMVI_CNTSEC, @ITSTRMVI_TIPPRD, @ITSTRMVI_ARTCOD, @ITSTRMVI_PREEXT, @ITSTRMVI_TIPOPR, @ITSTRMVI_CODOPR, 
+	  @ITSTRMVI_CODEMP
+        --Campos de Usuario
+        
+        --Campos de auditoria
+        , @ITSTRM_FECALT, @ITSTRM_FECMOD, @ITSTRM_USERID, @ITSTRM_ULTOPR, @ITSTRM_DEBAJA, @ITSTRM_HORMOV, @ITSTRM_MODULE, @ITSTRM_OALIAS, @ITSTRM_LOTTRA, @ITSTRM_LOTREC, @ITSTRM_LOTORI, @ITSTRM_SYSVER, @ITSTRM_CMPVER   
+        While (@@Fetch_Status = 0) And (Len(@ErrorMessage) = 0) Begin
+    
+            --Setea el error a Nothing
+            Set @ErrorMessage = ''
+            --Numero de secuencia, se utiliza para auditoria en stock
+			--#Parte->GR-278
+			if Upper(@GrabarSecuencia) = 'S' Begin
+				Set @NroSeq = @NroSeq + 1
+			End            
+			--#Parte->GR-278
+            --Toma el deposito y sector de los items
+            Set @Deposi = @ITSTRMVI_DEPOSI
+            Set @Sector = @ITSTRMVI_SECTOR
+            Set @NewCnt = @ITSTRMVI_CANTID
+            Set @NewSec = @ITSTRMVI_CNTSEC
+            Set @Nserie = @ITSTRMVI_NSERIE
+            Set @Ndespa = @ITSTRMVI_NDESPA
+            Set @Envase = @ITSTRMVI_ENVASE
+            Set @Notros = @ITSTRMVI_NOTROS
+            Set @Nfecha = @ITSTRMVI_NFECHA
+            Set @Natrib = @ITSTRMVI_NATRIB
+            Set @Nubica = @ITSTRMVI_NUBICA
+            Set @Nestan = @ITSTRMVI_NESTAN
+            
+            --En el caso de ser una transferencia entre depositos el primer registro
+            --es igual a un movimiento de egreso, por ese motivo la cantidad negativa
+            If ((@TipMov = 'T' And @CntLoop = 1) Or @TipMov = 'E') Begin
+                Set @NewCnt = (@ITSTRMVI_CANTID * -1)
+                Set @NewSec = (@ITSTRMVI_CNTSEC * -1)
+            End
+            
+            --Si es transferencia y es el registro que genera, toma los campos
+            --DepTra y Sectra para generar el nuevo movimiento
+            If (@TipMov = 'T' And @CntLoop = 2) Begin
+                Set @Deposi = @ITSTRMVI_DEPTRA
+                Set @Sector = @ITSTRMVI_SECTRA
+                Set @Nserie = @ITSTRMVI_TSERIE
+                Set @Ndespa = @ITSTRMVI_TDESPA
+                Set @Envase = @ITSTRMVI_TENVAS
+                Set @Notros = @ITSTRMVI_TOTROS
+                Set @Nfecha = @ITSTRMVI_TFECHA
+                Set @Natrib = @ITSTRMVI_TATRIB
+                Set @Nubica = @ITSTRMVI_TUBICA
+                Set @Nestan = @ITSTRMVI_TESTAN
+                --Evita clave duplicada, es utilizado tambien en la valorización de stock
+                Set @ITSTRMVI_NROITD = @ITSTRMVI_NROITD + 1000
+            End
+            
+            --En el caso de ser una transferencia por llegada a planta, el registro
+            --en negativo no contempla los atributos del producto para descargar del
+            --depósito fiscal
+            --Parte->KNOWHO-41
+            --'If (@TipMov = 'T' And @TipOpr = 'LPL') Begin
+            --Transferencia y llegada a planta o anulación de llegada a planta
+            If (@TipMov = 'T' And @TipOpr in ('LPL','ALP')) Begin
+                --Parte-> FL-716
+                Set @IsDepFis = (Select STTDEH_DEPFIS From STTDEH Where STTDEH_DEPOSI = @Deposi)
+                If @IsDepFis = 'S' Begin
+                    Set @Nserie = ''
+                    Set @Ndespa = ''
+                    Set @Envase = ''
+                    Set @Notros = ''
+                    Set @Natrib = ''
+                    Set @Nubica = ''
+                    Set @Nestan = ''
+                End
+            End
+            
+            --Verifica stock disponible por linea
+            --No realiza validaciones cuando es ingreso, llegada a planta o nota de crédito
+            Exec CwSpSTValSTRMVHStk @STRMVH_FCHMOV, @TipMov, @TipOpr, @ITSTRMVI_TIPPRO, @ITSTRMVI_ARTORI,
+            @Deposi, @Sector, @Nserie, @Ndespa, @Envase, @Notros, @Nfecha, @Natrib,
+            @Nubica, @Nestan, @NewCnt, @NewSec, @Stocks OutPut, @ErrorMessage OutPut
+    
+            --Si no hay error inserta el movimientos y actualiza saldo estatico
+            If (Len(@ErrorMessage) = 0) Begin
+                Insert Into STRMVI(
+                STRMVI_SUCURS, STRMVI_MODFOR, STRMVI_CODFOR, STRMVI_NROFOR, STRMVI_NROITM,
+                STRMVI_NROITD, STRMVI_NIVEXP, STRMVI_DEPOSI, STRMVI_SECTOR, STRMVI_FCHMOV,
+                STRMVI_TIPPRO, STRMVI_ARTORI, STRMVI_NSERIE, STRMVI_NDESPA, STRMVI_ENVASE,
+                STRMVI_NOTROS, STRMVI_NFECHA, STRMVI_NATRIB, STRMVI_NUBICA, STRMVI_NESTAN,
+                STRMVI_TEXTOS, STRMVI_CANTID, STRMVI_CNTSEC, STRMVI_STOCKS, STRMVI_NROSEQ,
+                STRMVI_TIPPRD, STRMVI_ARTCOD, STRMVI_COFLIS, STRMVI_CAMBIO, STRMVI_PRECIO,
+                STRMVI_PREEXT , STRMVI_TIPOPR, STRMVI_CODOPR, STRMVI_CODEMP
+                --Campos de Usuario
+                
+                --Campos de auditoria
+                , STRMVI.STRMVI_FECALT, STRMVI.STRMVI_FECMOD, STRMVI.STRMVI_USERID, STRMVI.STRMVI_ULTOPR, STRMVI.STRMVI_DEBAJA, STRMVI.STRMVI_HORMOV, STRMVI.STRMVI_MODULE, STRMVI.STRMVI_OALIAS, STRMVI.STRMVI_LOTTRA, STRMVI.STRMVI_LOTREC, STRMVI.STRMVI_LOTORI, STRMVI.STRMVI_SYSVER, STRMVI.STRMVI_CMPVER
+                ) Values (
+                @STRMVH_SUCURS, @STRMVH_MODFOR, @STRMVH_CODFOR, @STRMVH_NROFOR, @ITSTRMVI_NROITM, @ITSTRMVI_NROITD,
+                @ITSTRMVI_NIVEXP, @Deposi, @Sector, @STRMVH_FCHMOV, @ITSTRMVI_TIPPRO, @ITSTRMVI_ARTORI, @Nserie,
+                @Ndespa, @Envase, @Notros, @Nfecha, @Natrib, @Nubica, @Nestan, @ITSTRMVI_TEXTOS, @NewCnt, @NewSec,
+                IsNull(@Stocks, 0), @NroSeq, @ITSTRMVI_TIPPRD, @ITSTRMVI_ARTCOD, @ITSTRMVI_COFLIS, @ITSTRMVI_CAMBIO,
+  @ITSTRMVI_PRECIO, @ITSTRMVI_PREEXT, @ITSTRMVI_TIPOPR, @ITSTRMVI_CODOPR, @ITSTRMVI_CODEMP
+                --Campos de Usuario
+                
+                --Campos de auditoria
+                , @ITSTRM_FECALT, @ITSTRM_FECMOD, @ITSTRM_USERID, @ITSTRM_ULTOPR, @ITSTRM_DEBAJA, @ITSTRM_HORMOV, @ITSTRM_MODULE, @ITSTRM_OALIAS, @ITSTRM_LOTTRA, @ITSTRM_LOTREC, @ITSTRM_LOTORI, @ITSTRM_SYSVER, @ITSTRM_CMPVER)
+                --Actualiza Saldos Estaticos
+                Exec CwSpSTInsSTRMVHGenSTRMVK
+                @STRMVH_MODFOR, @STRMVH_CODFOR, @STRMVH_NROFOR, @STRMVH_FCHMOV,
+                @ITSTRMVI_TIPPRO, @ITSTRMVI_ARTORI, @Deposi, @Sector, @Nserie,
+                @Ndespa, @Envase, @Notros, @Nfecha, @Natrib, @Nubica, @Nestan,
+                @NewCnt, @NewSec, @CodEmp
+            End
+            --Si existen errores graba log de errores
+            If (Len(@ErrorMessage) <> 0) Begin
+                Exec CwSpSTInsSTRMVHSTRMVE @TranId, @ITSTRMVI_TIPPRD, @ITSTRMVI_ARTCOD,
+                @Nserie, @Ndespa, @Envase, @Notros, @Nfecha, @Natrib, @Nubica, @Nestan,
+                @NewCnt, 0, @CodEmp, '', '', 0, 0,  @Deposi, @Sector, @ErrorMessage
+            End
+            Fetch Next From TpCurItm Into
+            @STRMVH_SUCURS, @STRMVH_MODFOR, @STRMVH_CODFOR, @STRMVH_NROFOR, @STRMVH_FCHMOV, @STRMVH_CAMBIO,
+            @ITSTRMVI_COFLIS, @ITSTRMVI_CAMBIO, @ITSTRMVI_TEXTOS, @ITSTRMVI_NROITM, @ITSTRMVI_NROITD, @ITSTRMVI_NIVEXP,
+            @ITSTRMVI_DEPOSI, @ITSTRMVI_SECTOR, @ITSTRMVI_DEPTRA, @ITSTRMVI_SECTRA, @ITSTRMVI_TIPPRO, @ITSTRMVI_ARTORI,
+            @ITSTRMVI_NSERIE, @ITSTRMVI_NDESPA, @ITSTRMVI_ENVASE, @ITSTRMVI_NOTROS, @ITSTRMVI_NFECHA, @ITSTRMVI_NATRIB,
+            @ITSTRMVI_NUBICA, @ITSTRMVI_NESTAN, @ITSTRMVI_TSERIE, @ITSTRMVI_TDESPA, @ITSTRMVI_TENVAS, @ITSTRMVI_TOTROS,
+            @ITSTRMVI_TFECHA, @ITSTRMVI_TATRIB, @ITSTRMVI_TUBICA, @ITSTRMVI_TESTAN, @ITSTRMVI_PRECIO, @ITSTRMVI_CANTID,
+            @ITSTRMVI_CNTSEC, @ITSTRMVI_TIPPRD, @ITSTRMVI_ARTCOD, @ITSTRMVI_PREEXT, @ITSTRMVI_TIPOPR, @ITSTRMVI_CODOPR, 
+	      @ITSTRMVI_CODEMP
+            --Campos de Usuario
+            
+            --Campos de auditoria
+            , @ITSTRM_FECALT, @ITSTRM_FECMOD, @ITSTRM_USERID, @ITSTRM_ULTOPR, @ITSTRM_DEBAJA, @ITSTRM_HORMOV, @ITSTRM_MODULE, @ITSTRM_OALIAS, @ITSTRM_LOTTRA, @ITSTRM_LOTREC, @ITSTRM_LOTORI, @ITSTRM_SYSVER, @ITSTRM_CMPVER
+        End
+        Close TpCurItm
+        Set @CntLoop = @CntLoop + 1
+    End
+    Deallocate TpCurItm
+End

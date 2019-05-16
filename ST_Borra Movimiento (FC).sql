@@ -1,0 +1,15 @@
+declare @@MOD varchar(2), @@COD varchar(6), @@NRO int
+
+select
+@@MOD = 'ST',
+@@COD = 'ALP',
+@@NRO = 10
+
+delete STRMVI where STRMVI_MODFOR = @@MOD and STRMVI_CODFOR = @@COD and STRMVI_NROFOR = @@NRO
+delete STRMVH where STRMVH_MODFOR = @@MOD and STRMVH_CODFOR = @@COD and STRMVH_NROFOR = @@NRO
+
+delete FCRMVG where FCRMVG_MODFOR = @@MOD and FCRMVG_CODFOR = @@COD and FCRMVG_NROFOR = @@NRO
+delete FCRMVD where FCRMVD_MODFOR = @@MOD and FCRMVD_CODFOR = @@COD and FCRMVD_NROFOR = @@NRO
+delete FCRMVP where FCRMVP_MODFOR = @@MOD and FCRMVP_CODFOR = @@COD and FCRMVP_NROFOR = @@NRO
+delete FCRMVI where FCRMVI_MODFOR = @@MOD and FCRMVI_CODFOR = @@COD and FCRMVI_NROFOR = @@NRO
+delete FCRMVH where FCRMVH_MODFOR = @@MOD and FCRMVH_CODFOR = @@COD and FCRMVH_NROFOR = @@NRO

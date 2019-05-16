@@ -1,0 +1,57 @@
+Set objExcel = CreateObject("Excel.Application")
+
+objExcel.Visible = True
+objExcel.Workbooks.Add	
+
+objExcel.Cells(1, 1).Value = "Cliente"
+objExcel.Cells(1, 2).Value = "Razon Social"
+objExcel.Cells(1, 3).Value = "Direccion"
+objExcel.Cells(1, 4).Value = "Mail"
+
+'Pone en negritas los titulos
+Set objRange = objExcel.Range("A1","D1")
+objRange.Font.Bold = TRUE
+'pone el fondo a los titulos
+objRange.Interior.ColorIndex = 3
+
+Set oConn = CreateObject("ADODB.Connection")
+
+oConn.Provider = "sqloledb"
+oConn.Properties("Data Source").Value = "SAC17NB"
+oConn.Properties("Initial Catalog").Value = "CWALOGICELECTRA"
+oConn.Properties("User ID").Value = "SA"
+oConn.Properties("Password").Value = ""
+
+oConn.Open
+
+X=2
+
+sql=""
+sql=sql & " SELECT top 50 "
+sql=sql & " VTMCLH_NROCTA NROCTA,"
+sql=sql & " VTMCLH_NOMBRE NOMBRE,"
+sql=sql & " VTMCLH_DIRECC DIRECC,"
+sql=sql & " ISNULL(VTMCLH_DIREML,'TOT@YAOO.COM') DIREML "
+sql=sql & " FROM "
+sql=sql & " VTMCLH "
+
+Set RD = oConn.Execute(SQL)
+Do While Not RD.EOF
+	NROCTA = RD("NROCTA").Value
+	NOMBRE = RD("NOMBRE").Value
+	DIRECC = RD("DIRECC").Value
+	DIREML = RD("DIREML").Value
+	objExcel.Cells(x, 1).Value = NROCTA
+	objExcel.Cells(x, 2).Value = NoMBRE
+	objExcel.Cells(x, 3).Value = DIRECC
+	objExcel.Cells(x, 4).Value = DIREML
+	X=X+1
+	RD.MoveNext
+
+Loop
+RD.CLOSE 
+Set RD = Nothing
+
+objExcel.ActiveWorkbook.SaveAs "c:\testin.xls"
+objExcel.Workbooks(1).Close
+objExcel.Quit 
